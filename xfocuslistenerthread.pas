@@ -1,4 +1,23 @@
 unit XFocusListenerThread;
+{
+This unit contains the TXFocusListenerThread which extends the TThread class.
+This thread, when started and provided with an X display connection, will
+wait for a focus event or a structure event to occur on any window in that
+X display. When it finds one is gets the geometry of that window, this can be
+accessed via CurrentRect. There is also the RootRect, which is the gemotery of
+the root window. And, if you want it, the ID of the window that is currently
+focused is available via CurrentWindow.
+
+To be notified of changes to the focus or geometry of a window, set the
+OnFocusNotify property to point to a callback function.
+
+If you need to stop this thread at any time, you can use
+TXFocusListenerThread.Terminate;
+When you do this, if the thread is sleeping, it will not terminate. The thread
+is sleeping whenever it is waiting for an X event. To wake the thread up so that
+it can terminate gracefuly, you should call Terminate and then call
+TXFocusListenerThread.Interrupt;
+}
 
 {$mode objfpc}{$H+}
 
@@ -13,13 +32,14 @@ type
   TXFocusListenerThread = class(TThread)
     private
       FXDisplay: PDisplay;
-      FCurrentWindow: TWindow;
+      FCurrentWindow, FRoot: TWindow;
       geom: TRect;
       rootgeom: TRect;
       FOnFocusNotify: TFocusNotifyEvent;
       pipi, pipo: longint;
       InterruptInStream: TInputPipeStream;
       InterruptOutStream: TOutputPipeStream;
+      FGotEvent: boolean;
       procedure WaitForXEvent;
     public
       procedure updateFocusedWindowData;
@@ -31,7 +51,7 @@ type
       procedure Execute; override;
       constructor Create(_XDisplay: PDisplay;
                   _OnFocusNotify: TFocusNotifyEvent);
-      procedure interrupt;
+      procedure Interrupt;
   end;
 
 var
@@ -83,6 +103,8 @@ begin
   InterruptOutStream := TOutputPipeStream.create(pipo);
   // Use our custom error handler that ignores BadWindow.
   XSetErrorHandler(TXErrorHandler(@XErrorIgnoreBadWindow));
+  // Horrible hacky flag
+  FGotEvent := False;
   // Parent init
   inherited create(False);
   // All done, keep a reference to ourself handy in this unit.
@@ -138,8 +160,9 @@ begin
     until false;
 
     if not didError then begin
-      // We have a top level window, update the current window ID field
+      // We have a top level window and root, update the current window ID field
       FCurrentWindow := wfocus;
+      FRoot := wroot;
       // Get the gemoetry
       XGetGeometry(FXDisplay, wfocus, @wroot, @x, @y, @width, @height,
                               @border_width, @depth);
@@ -151,11 +174,36 @@ begin
       rootgeom := Rect(x,y, width, height);
 
       //If the callback is set, call it
-      if not (FOnFocusNotify = nil) then FOnFocusNotify();
+      if (not (FOnFocusNotify = nil)) then FOnFocusNotify();
     end else
     begin
       // If there was an error, set the curent window to 0
       FCurrentWindow:=0;
+    end;
+  end;
+end;
+
+// This procedure selects the specified event on all X windows
+procedure selectEventAllWindows(display: PDisplay; root: TWindow;
+                                                   events: clong);
+var wroot, wparent: TWindow;
+   children: PWindow;
+   nchildren: cuint;
+   childI: cuint;
+begin
+  // Select events on root
+  XSelectInput(display, root,
+                          FocusChangeMask or StructureNotifyMask);
+  // Get all of the children of root (if any)
+  if XQueryTree(display, root, @wroot, @wparent, @children, @nchildren)
+                                                           <> 0 then begin
+    if nchildren > 0 then begin // If we now have some child windows
+      // Select the event for all child windows recursively
+      for childI := 0 to nchildren-1 do begin
+        selectEventAllWindows(display, children[childI], events);
+      end;
+      // When we are done, free the children.
+      XFree(children);
     end;
   end;
 end;
@@ -168,10 +216,9 @@ var
   FDS : Tfdset;
   XFD : cint;
 begin
-  // Select the 'FocusChange' and 'StructureNotify' events for the focused
-  // window
-  XSelectInput(FXDisplay, FCurrentWindow,
-                          FocusChangeMask or StructureNotifyMask);
+  // Select the 'FocusChange' and 'StructureNotify' events for all windows
+  selectEventAllWindows(FXDisplay, FRoot,
+                                   FocusChangeMask or StructureNotifyMask);
   // Wait for the next event on that window or for an interrupt from the pipe.
   // To do this, first we create a descriptor set with the X event queue and
   // the interrupt pipe.
@@ -182,11 +229,19 @@ begin
   fpFD_Set (pipi,FDS);                // Add the interrupt pipe FD to the set
   // select on the file handles for X event queue and our internal interrupt
   // pipe. This blocks until one of them has data to read.
-  fpSelect (max(pipi, XFD)+1,@FDS,nil,nil,nil);
+  // Hacky flag triggers a second check of the window after each event
+  if not FGotEvent then begin
+    if (XPending(FXDisplay) = 0) then
+      fpSelect (max(pipi, XFD)+1,@FDS,nil,nil,nil);
+  end else
+  begin
+    FGotEvent := False;
+  end;
   // As soon as there is something to do, we continue here...
   while (XPending(FXDisplay) > 0) do begin
     // If we continued because there was an X event, we deal with it here.
     XNextEvent(FXDisplay, @nextxevent);
+    FGotEvent := True;
   end;
 
   if InterruptInStream.NumBytesAvailable > 0 then begin
@@ -196,9 +251,6 @@ begin
     while (InterruptInStream.NumBytesAvailable > 0) do
       InterruptInStream.ReadAnsiString;
   end;
-
-  // Deselect all events for this window
-  XSelectInput(FXDisplay, FCurrentWindow, NoEventMask);
 end;
 
 procedure TXFocusListenerThread.Execute();

@@ -9,7 +9,7 @@ uses
   Classes,
   { you can add units after this }
   XFocusListenerThread, xlib, sysutils, dateutils,
-  sdposerial, math, IniFiles;
+  sdposerial, math, IniFiles, SerialSenderThread;
 
 type
   TserialHandler = class(TObject)
@@ -19,6 +19,7 @@ type
 
 var
   FocusThread: TXFocusListenerThread;
+  SerialThread: TSerialSenderThread;
   XDisplay: PDisplay;
   serial: TSdpoSerial;
   serialHandler: TserialHandler;
@@ -27,44 +28,23 @@ var
   portName: string;
   focusColour: string;
   otherColour: string;
-  fo_r_h, fo_g_h, fo_b_h, fo_r_l, fo_g_l, fo_b_l: char;
-  ot_r_h, ot_g_h, ot_b_h, ot_r_l, ot_g_l, ot_b_l: char;
-  l_skip, l_light, l_tot: integer;
-  ls_l, ls_h, ll_l, ll_h, lt_l, lt_h : char;
+  MyLEDSettings: TLEDSettings;
   gi: integer;
+
+  lastStart, lastStop: integer;
 
 
 const
   iniFileName = 'focusbar.conf';
 
-function isLit(i, numLEDs: integer):boolean;
-var relPos, relStart, relEnd: extended;
-begin
-  relPos := i/numLEDs;
-  relStart := max(0,FocusThread.CurrentRect.Left) / FocusThread.RootRect.Right;
-  relEnd := (FocusThread.CurrentRect.Left+FocusThread.CurrentRect.Right) / FocusThread.RootRect.Right;
-  result := (relStart<=relPos) and (relPos <= relEnd);
-end;
 
-procedure waitForReply(serial: TSdpoSerial);
-var startTime: int64;
-begin
-  startTime := DateTimeToUnix(now);
-  while (not (serial.DataAvailable)) and (not(startTime + 1 < DateTimeToUnix(now))) do begin  end;
-  while (serial.DataAvailable) do begin serial.ReadData end;
-end;
-
-procedure wakeSerial(serial: TSdpoSerial);
-begin
-  serial.WriteData('A');
-  waitForReply(serial);
-end;
 
 procedure FocusChanged();
-var buf : array[0..6] of char;
-  i: integer;
+var
+  hasChanged: boolean;
+  thisStart, thisStop: integer;
 const sleepDelay: integer = 1;
-begin  {
+begin
   writeln(Format('Focus is on %d @%d,%d size: %dx%d',[
     FocusThread.CurrentWindow,
     FocusThread.CurrentRect.Left,
@@ -72,42 +52,18 @@ begin  {
     FocusThread.CurrentRect.Right,
     FocusThread.CurrentRect.Bottom
   ]));
-        }
-  wakeSerial(serial);
-  serial.writeData('s' + ls_h + ls_l);
-  waitForReply(serial);
-  serial.writeData('l' + ll_h + ll_l);
-  waitForReply(serial);
-  serial.writeData('t' + lt_h + lt_l);
-  waitForReply(serial);
-  serial.writeData('r');
-  waitForReply(serial);
-
-  for i := 0 to l_light-1 do begin
-    buf[0] := 'd';
-
-    if (isLit(i, l_light)) then begin
-      buf[1] := char(fo_r_h);
-      buf[2] := char(fo_g_h);
-      buf[3] := char(fo_b_h);
-      buf[4] := char(fo_r_l);
-      buf[5] := char(fo_g_l);
-      buf[6] := char(fo_b_l);
-    end else
-    begin
-      buf[1] := char(ot_r_h);
-      buf[2] := char(ot_g_h);
-      buf[3] := char(ot_b_h);
-      buf[4] := char(ot_r_l);
-      buf[5] := char(ot_g_l);
-      buf[6] := char(ot_b_l);
-    end;
 
 
-    serial.WriteBuffer(buf, 7);
-    waitForReply(serial);
+  thisStart := max(0,FocusThread.CurrentRect.Left);
+  thisStop := FocusThread.CurrentRect.Left+FocusThread.CurrentRect.Right;
+
+  hasChanged := (thisStart <> lastStart) or (thisStop <> lastStop);
+
+  if hasChanged then begin
+    lastStart := thisStart;
+    lastStop := thisStop;
+    SerialThread.interrupt;
   end;
-  serial.writeData('e');
 
 
 end;
@@ -157,44 +113,44 @@ begin
 
   portName := conf.ReadString ('connection', 'port', '/dev/ttyUSB0');
 
-  l_skip   := conf.ReadInteger('leds', 'skip', 0);
-  l_light  := conf.ReadInteger('leds', 'use', 30);
-  l_tot    := conf.ReadInteger('leds', 'total', 30);
+  MyLEDSettings.l_skip   := conf.ReadInteger('leds', 'skip', 0);
+  MyLEDSettings.l_light  := conf.ReadInteger('leds', 'use', 30);
+  MyLEDSettings.l_tot    := conf.ReadInteger('leds', 'total', 30);
 
   focusColour := conf.ReadString ('colours', 'focus', '00ff00');
   otherColour := conf.ReadString ('colours', 'other', '000000');
 
-  if l_skip > 255 then fatalError('Cannot skip this many LEDs, max is 255');
-  if l_light > 255 then fatalError('Cannot use this many LEDs, max is 255');
-  if l_tot > 255 then fatalError('Maximum supported strip length is 255');
+  if MyLEDSettings.l_skip > 255 then fatalError('Cannot skip this many LEDs, max is 255');
+  if MyLEDSettings.l_light > 255 then fatalError('Cannot use this many LEDs, max is 255');
+  if MyLEDSettings.l_tot > 255 then fatalError('Maximum supported strip length is 255');
 
   if length(focusColour) <> 6 then fatalError('Invalid focus colour. ' +
                                                      'Expected six hex digits');
   if length(otherColour) <> 6 then fatalError('Invalid other colour. ' +
                                                      'Expected six hex digits');
 
-  ls_l := char($40 or  (l_skip  and  $f)       );
-  ls_h := char($40 or ((l_skip  and $f0) shr 4));
+  MyLEDSettings.ls_l := char($40 or  (MyLEDSettings.l_skip  and  $f)       );
+  MyLEDSettings.ls_h := char($40 or ((MyLEDSettings.l_skip  and $f0) shr 4));
 
-  ll_l := char($40 or  (l_light and  $f)       );
-  ll_h := char($40 or ((l_light and $f0) shr 4));
+  MyLEDSettings.ll_l := char($40 or  (MyLEDSettings.l_light and  $f)       );
+  MyLEDSettings.ll_h := char($40 or ((MyLEDSettings.l_light and $f0) shr 4));
 
-  lt_l := char($40 or  (l_tot   and  $f)       );
-  lt_h := char($40 or ((l_tot   and $f0) shr 4));
+  MyLEDSettings.lt_l := char($40 or  (MyLEDSettings.l_tot   and  $f)       );
+  MyLEDSettings.lt_h := char($40 or ((MyLEDSettings.l_tot   and $f0) shr 4));
 
-  fo_r_h := hexCharToEncInt(focusColour[1]);
-  fo_r_l := hexCharToEncInt(focusColour[2]);
-  fo_g_h := hexCharToEncInt(focusColour[3]);
-  fo_g_l := hexCharToEncInt(focusColour[4]);
-  fo_b_h := hexCharToEncInt(focusColour[5]);
-  fo_b_l := hexCharToEncInt(focusColour[6]);
+  MyLEDSettings.fo_r_h := hexCharToEncInt(focusColour[1]);
+  MyLEDSettings.fo_r_l := hexCharToEncInt(focusColour[2]);
+  MyLEDSettings.fo_g_h := hexCharToEncInt(focusColour[3]);
+  MyLEDSettings.fo_g_l := hexCharToEncInt(focusColour[4]);
+  MyLEDSettings.fo_b_h := hexCharToEncInt(focusColour[5]);
+  MyLEDSettings.fo_b_l := hexCharToEncInt(focusColour[6]);
 
-  ot_r_h := hexCharToEncInt(otherColour[1]);
-  ot_r_l := hexCharToEncInt(otherColour[2]);
-  ot_g_h := hexCharToEncInt(otherColour[3]);
-  ot_g_l := hexCharToEncInt(otherColour[4]);
-  ot_b_h := hexCharToEncInt(otherColour[5]);
-  ot_b_l := hexCharToEncInt(otherColour[6]);
+  MyLEDSettings.ot_r_h := hexCharToEncInt(otherColour[1]);
+  MyLEDSettings.ot_r_l := hexCharToEncInt(otherColour[2]);
+  MyLEDSettings.ot_g_h := hexCharToEncInt(otherColour[3]);
+  MyLEDSettings.ot_g_l := hexCharToEncInt(otherColour[4]);
+  MyLEDSettings.ot_b_h := hexCharToEncInt(otherColour[5]);
+  MyLEDSettings.ot_b_l := hexCharToEncInt(otherColour[6]);
 
   serial := TSdpoSerial.Create(nil);
   serial.BaudRate:=br115200;
@@ -210,6 +166,8 @@ begin
   XDisplay := XOpenDisplay(nil);
   if not (XDisplay = nil) then begin
     FocusThread := TXFocusListenerThread.Create(XDisplay, @FocusChanged);
+    SerialThread := TSerialSenderThread.create(serial, FocusThread);
+    SerialThread.LEDSettings := MyLEDSettings;
     while (true) do begin
       readln();
       FocusThread.interrupt;
