@@ -1,4 +1,15 @@
 unit SerialSenderThread;
+{
+This unit contains TLEDSettings and TSerialSenderThread
+
+TLEDSettings is simply a record for holding (mostly) raw data to send to the
+LED strip for setting up the colour and LED skip and light values.
+
+TSerialSenderThread extends TThread and simply waits for a call to Interrupt
+and then sends data out via the serial port (using a TSDPOSerial instance
+provided to the constructor)
+}
+
 
 {$mode objfpc}{$H+}
 
@@ -10,6 +21,7 @@ uses
 
 type
 
+  // For holding details of what the LED strip is expecting
   TLEDSettings = record
     fo_r_h, fo_g_h, fo_b_h, fo_r_l, fo_g_l, fo_b_l: char;
     ot_r_h, ot_g_h, ot_b_h, ot_r_l, ot_g_l, ot_b_l: char;
@@ -17,6 +29,7 @@ type
     ls_l, ls_h, ll_l, ll_h, lt_l, lt_h : char;
   end;
 
+  // Thread that sends serial stuff to the LED strip
   TSerialSenderThread = class(TThread)
     private
       FSerial: TSdpoSerial;
@@ -61,9 +74,13 @@ end;
 function TSerialSenderThread.isLit(i, numLEDs: integer):boolean;
 var relPos, relStart, relEnd: extended;
 begin
+  // Determine if LED i should be lit
+  // Remember that the rects are used to store width and height in the right
+  // and bottom fields
   relPos := i/numLEDs;
   relStart := max(0,FFocus.CurrentRect.Left) / FFocus.RootRect.Right;
-  relEnd := (FFocus.CurrentRect.Left+FFocus.CurrentRect.Right) / FFocus.RootRect.Right;
+  relEnd :=
+  (FFocus.CurrentRect.Left+FFocus.CurrentRect.Right) / FFocus.RootRect.Right;
   result := (relStart<=relPos) and (relPos <= relEnd);
 end;
 
@@ -71,12 +88,14 @@ procedure waitForReply(serial: TSdpoSerial);
 var startTime: int64;
 begin
   startTime := DateTimeToUnix(now);
-  while (not (serial.DataAvailable)) and (not(startTime + 1 < DateTimeToUnix(now))) do begin  end;
+  while (not (serial.DataAvailable)) and
+        (not (startTime + 1 < DateTimeToUnix(now))) do begin end;
   while (serial.DataAvailable) do begin serial.ReadData end;
 end;
 
 procedure wakeSerial(serial: TSdpoSerial);
 begin
+  // Write a byte to the serial port and wait for a response
   serial.WriteData('A');
   waitForReply(serial);
 end;
@@ -88,6 +107,7 @@ var
   i: integer;
 begin
   while (not terminated) do begin
+    // Wait to be interrupted by 'selecting' the interrupt pipe
     fpFD_Zero (FDS);
     fpFD_Set (pipi,FDS);
     fpSelect (pipi+1,@FDS,nil,nil,nil);
@@ -96,6 +116,7 @@ begin
       while (InterruptInStream.NumBytesAvailable > 0) do
         InterruptInStream.ReadAnsiString;
     end;
+    // Write data to serial
     writeln('Send stuff!');
     wakeSerial(FSerial);
     FSerial.writeData('s' + FLEDSettings.ls_h + FLEDSettings.ls_l);

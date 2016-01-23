@@ -45,6 +45,8 @@ type
       procedure updateFocusedWindowData;
       property XDisplay: PDisplay write FXDisplay;
       property CurrentWindow: TWindow read FCurrentWindow;
+      // Note that these rects are used to store width and height in the right
+      // and bottom fields
       property CurrentRect: TRect read geom;
       property RootRect: TRect read rootgeom;
       property OnFocusNotify: TFocusNotifyEvent write FOnFocusNotify;
