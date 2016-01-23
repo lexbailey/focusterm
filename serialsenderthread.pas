@@ -27,6 +27,7 @@ type
     ot_r_h, ot_g_h, ot_b_h, ot_r_l, ot_g_l, ot_b_l: char;
     l_skip, l_light, l_tot: integer;
     ls_l, ls_h, ll_l, ll_h, lt_l, lt_h : char;
+    rev: boolean;
   end;
 
   // Thread that sends serial stuff to the LED strip
@@ -77,6 +78,9 @@ begin
   // Determine if LED i should be lit
   // Remember that the rects are used to store width and height in the right
   // and bottom fields
+  if FLEDSettings.rev then begin
+    i := (numLEDs - i) -1;
+  end;
   relPos := i/numLEDs;
   relStart := max(0,FFocus.CurrentRect.Left) / FFocus.RootRect.Right;
   relEnd :=
@@ -112,12 +116,10 @@ begin
     fpFD_Set (pipi,FDS);
     fpSelect (pipi+1,@FDS,nil,nil,nil);
     if InterruptInStream.NumBytesAvailable > 0 then begin
-      writeln('Serial Interrupt');
       while (InterruptInStream.NumBytesAvailable > 0) do
         InterruptInStream.ReadAnsiString;
     end;
     // Write data to serial
-    writeln('Send stuff!');
     wakeSerial(FSerial);
     FSerial.writeData('s' + FLEDSettings.ls_h + FLEDSettings.ls_l);
     waitForReply(FSerial);

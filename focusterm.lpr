@@ -45,15 +45,6 @@ var
   thisStart, thisStop: integer;
 const sleepDelay: integer = 1;
 begin
-  writeln(Format('Focus is on %d @%d,%d size: %dx%d',[
-    FocusThread.CurrentWindow,
-    FocusThread.CurrentRect.Left,
-    FocusThread.CurrentRect.Top,
-    FocusThread.CurrentRect.Right,
-    FocusThread.CurrentRect.Bottom
-  ]));
-
-
   thisStart := max(0,FocusThread.CurrentRect.Left);
   thisStop := FocusThread.CurrentRect.Left+FocusThread.CurrentRect.Right;
 
@@ -64,7 +55,6 @@ begin
     lastStop := thisStop;
     SerialThread.interrupt;
   end;
-
 
 end;
 
@@ -116,6 +106,7 @@ begin
   MyLEDSettings.l_skip   := conf.ReadInteger('leds', 'skip', 0);
   MyLEDSettings.l_light  := conf.ReadInteger('leds', 'use', 30);
   MyLEDSettings.l_tot    := conf.ReadInteger('leds', 'total', 30);
+  MyLEDSettings.rev      := conf.ReadBool('leds', 'reverse', false);
 
   focusColour := conf.ReadString ('colours', 'focus', '00ff00');
   otherColour := conf.ReadString ('colours', 'other', '000000');
