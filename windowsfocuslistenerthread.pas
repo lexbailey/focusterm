@@ -24,7 +24,6 @@ type
       pipi, pipo: longint;
       InterruptInStream: TInputPipeStream;
       InterruptOutStream: TOutputPipeStream;
-      FGotEvent: boolean;
       procedure WaitForWindowEvent;
     public
       procedure updateFocusedWindowData;
@@ -58,16 +57,14 @@ begin
      exit;
   // Init fields
   FOnFocusNotify := _OnFocusNotify;
-  // Horrible hacky flag
-  FGotEvent := False;
   // Parent init
   inherited create(False);
 
-  SetWinEventHook(EVENT_SYSTEM_FOREGROUND,
+ { SetWinEventHook(EVENT_SYSTEM_FOREGROUND,
   EVENT_SYSTEM_FOREGROUND, NULL,
   @FocusChangeCallback, 0, 0,
   WINEVENT_OUTOFCONTEXT or WINEVENT_SKIPOWNPROCESS);
-
+  }
   // All done, keep a reference to ourself handy in this unit.
   focusThreadInstance := self;
 end;
@@ -108,7 +105,7 @@ end;
 
 procedure TWindowsFocusListenerThread.WaitForWindowEvent();
 begin
-  sleep(1000);
+  sleep(100);
 //  EVENT_SYSTEM_FOREGROUND
 end;
 
