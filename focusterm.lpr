@@ -33,10 +33,17 @@ var
 
   lastStart, lastStop: integer;
 
+  attempts: integer;
+
 
 const
-  iniFileName = 'focusbar.conf';
-
+  {$IFDEF UNIX}
+  iniFileName = '/etc/focusbar.conf';
+  {$ENDIF}
+  {$IFDEF WINDOWS}
+  iniFileName = './focusbar.conf';
+  {$ENDIF}
+  attemptLimit = 10;
 
 
 procedure FocusChanged();
@@ -152,7 +159,21 @@ begin
   serial.Device:=portName;
   serialHandler := TserialHandler.Create;
   serial.OnRxData:=@serialHandler.gotSerial;
-  serial.Active:=true;
+  attempts := 0;
+  try
+    serial.Active:=true;
+  except
+    while (attempts < attemptLimit) do begin
+      sleep(10000);
+      Writeln('Connecting to ' + portName + '...');
+      inc(attempts);
+      try
+        serial.Active:=true;
+      except
+      end;
+    end;
+  end;
+
 
   XDisplay := XOpenDisplay(nil);
   if not (XDisplay = nil) then begin
