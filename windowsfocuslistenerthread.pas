@@ -11,8 +11,7 @@ interface
 uses
   Classes,
   pipes,
-  windows,
-  JwaWinAble;
+  windows, winsock, JwaWinAble;
 
 type
   TFocusNotifyEvent = procedure;
@@ -21,10 +20,11 @@ type
       geom: TRect;
       rootgeom: TRect;
       FOnFocusNotify: TFocusNotifyEvent;
-      pipi, pipo: longint;
+      pipi, pipo: THandle;
       InterruptInStream: TInputPipeStream;
       InterruptOutStream: TOutputPipeStream;
       procedure WaitForWindowEvent;
+      procedure interrupt;
     public
       procedure updateFocusedWindowData;
       // Note that these rects are used to store width and height in the right
@@ -41,11 +41,18 @@ var
 
 implementation
 
+procedure TWindowsFocusListenerThread.interrupt;
+begin
+  // Interrupt the thread to trigger another update
+  InterruptOutStream.WriteAnsiString('#');
+end;
 
 procedure FocusChangeCallback(hWinEventHook: HWINEVENTHOOK; dwEvent: DWORD;
   hwnd: HWND; idObject: LONG; idChild: LONG; dwEventThread: DWORD;
   dwmsEventTime: DWORD) stdcall;
 begin
+  if focusThreadInstance <> nil then
+     focusThreadInstance.interrupt;
 end;
 
 // Constructor that sets some fields and starts the thread
@@ -57,14 +64,23 @@ begin
      exit;
   // Init fields
   FOnFocusNotify := _OnFocusNotify;
+  // init interrupt pipe
+  if not CreatePipeHandles(pipi,pipo, 9) then begin
+    Writeln('Error assigning pipes !');
+    exit;
+  end;
+  InterruptInStream := TInputPipeStream.create(pipi);
+  InterruptOutStream := TOutputPipeStream.create(pipo);
+
   // Parent init
   inherited create(False);
-
- { SetWinEventHook(EVENT_SYSTEM_FOREGROUND,
-  EVENT_SYSTEM_FOREGROUND, NULL,
+  // Event hook for focus change
+  SetWinEventHook(EVENT_SYSTEM_FOREGROUND,
+  EVENT_SYSTEM_FOREGROUND, 0,
   @FocusChangeCallback, 0, 0,
-  WINEVENT_OUTOFCONTEXT or WINEVENT_SKIPOWNPROCESS);
-  }
+  //WINEVENT_OUTOFCONTEXT or WINEVENT_SKIPOWNPROCESS
+  WINEVENT_SKIPOWNPROCESS or WINEVENT_SKIPOWNTHREAD
+  );
   // All done, keep a reference to ourself handy in this unit.
   focusThreadInstance := self;
 end;
@@ -75,38 +91,34 @@ procedure TWindowsFocusListenerThread.updateFocusedWindowData();
 var
    // Various window IDs
    wfocus: HWND;
-
    wrect: LPRECT;
 begin
   wrect := @geom;
-  // Get the currently focused window into a local variable (not the field yet)
+  // Get the currently focused window
   wfocus := GetForegroundWindow;
-  writeln('update');
   if wfocus <> longword(nil) then begin
-    writeln('gotwindow');
     GetWindowRect(wfocus, wrect);
     geom.Right:=geom.Right-geom.Left;
     geom.Bottom:=geom.Bottom-geom.Top;
-    writeln('gotwindow2');
-    //geom.Left := wrect^.Left;
-    //geom.Top := wrect^.Top;
-    //geom.Right := wrect^.Right;
-    //geom.Bottom := wrect^.Bottom;
-    writeln('gotwindow3');
-
     rootgeom.Top:=0;
     rootgeom.Left:=0;
     rootgeom.Right:=GetSystemMetrics(SM_CXVIRTUALSCREEN);
     rootgeom.Bottom:=GetSystemMetrics(SM_CYVIRTUALSCREEN);
-
     if (not (FOnFocusNotify = nil)) then FOnFocusNotify();
   end;
 end;
 
 procedure TWindowsFocusListenerThread.WaitForWindowEvent();
+var
+  FDS : Tfdset;
 begin
-  sleep(100);
-//  EVENT_SYSTEM_FOREGROUND
+  FD_Zero (FDS);
+  FD_Set (pipi,FDS);
+  Select (pipi+1,@FDS,nil,nil,nil);
+  if InterruptInStream.NumBytesAvailable > 0 then begin
+    while (InterruptInStream.NumBytesAvailable > 0) do
+      InterruptInStream.ReadAnsiString;
+  end;
 end;
 
 procedure TWindowsFocusListenerThread.Execute();
@@ -114,10 +126,8 @@ begin
   // When the thread first starts, it should get the focused window
   updateFocusedWindowData();
   while(not Terminated) do begin
-    writeln('loop');
     // WaitForWindowEvent will block until there is an event
     WaitForWindowEvent;
-    writeln('event');
     // After an event has occured, if the thread should still run then we need
     // to update the focused window data.
     if not Terminated then updateFocusedWindowData();

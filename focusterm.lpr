@@ -13,6 +13,8 @@ uses
   {$ENDIF}
   {$IFDEF WINDOWS}
   WindowsFocusListenerThread,
+  windows,
+  JwaWinAble,
   {$ENDIF}
   sysutils, dateutils,
   sdposerial, math, IniFiles, SerialSenderThread;
