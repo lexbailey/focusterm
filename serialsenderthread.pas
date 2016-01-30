@@ -16,8 +16,15 @@ provided to the constructor)
 interface
 
 uses
-  Classes, SysUtils, SdpoSerial, Unix, pipes, XFocusListenerThread, math, dateutils,
-  BaseUnix;
+  {$IFDEF UNIX}
+  Unix, BaseUnix, XFocusListenerThread,
+  {$ENDIF}
+  {$IFDEF WINDOWS}
+  windows,
+  WindowsFocusListenerThread,
+  winsock,
+  {$ENDIF}
+  Classes, SysUtils, SdpoSerial, pipes, math, dateutils;
 
 type
 
@@ -34,8 +41,15 @@ type
   TSerialSenderThread = class(TThread)
     private
       FSerial: TSdpoSerial;
+      {$IFDEF UNIX}
       FFocus: TXFocusListenerThread;
       pipi, pipo: longint;
+      {$ENDIF}
+      {$IFDEF WINDOWS}
+      FFocus: TWindowsFocusListenerThread;
+      pipi, pipo: THandle;
+      {$ENDIF}
+
       InterruptInStream: TInputPipeStream;
       InterruptOutStream: TOutputPipeStream;
       FLEDSettings: TLEDSettings;
@@ -45,7 +59,12 @@ type
       procedure interrupt;
       property LEDSettings : TLEDSettings read FLEDSettings write FLEDSettings;
       function islit(i, numLEDs: integer):boolean;
+      {$IFDEF UNIX}
       constructor Create(_serial: TSdpoSerial; _focus: TXFocusListenerThread);
+      {$ENDIF}
+      {$IFDEF WINDOWS}
+      constructor Create(_serial: TSdpoSerial; _focus: TWindowsFocusListenerThread);
+      {$ENDIF}
 
   end;
 
@@ -58,12 +77,22 @@ begin
   InterruptOutStream.WriteAnsiString('#');
 end;
 
+{$IFDEF UNIX}
 constructor TSerialSenderThread.Create(_serial: TSdpoSerial; _focus: TXFocusListenerThread);
+{$ENDIF}
+{$IFDEF WINDOWS}
+constructor TSerialSenderThread.Create(_serial: TSdpoSerial; _focus: TWindowsFocusListenerThread);
+{$ENDIF}
 begin
   FSerial := _serial;
   FFocus := _focus;
   // Create a pipe for interrupting the thread if needed.
+  {$IFDEF UNIX}
   if assignpipe(pipi,pipo) <> 0 then begin
+  {$ENDIF}
+  {$IFDEF WINDOWS}
+  if not CreatePipeHandles(pipi,pipo, 9) then begin
+  {$ENDIF}
     Writeln('Error assigning pipes !');
     exit;
   end;
@@ -112,13 +141,22 @@ var
 begin
   while (not terminated) do begin
     // Wait to be interrupted by 'selecting' the interrupt pipe
+    {$IFDEF UNIX}
     fpFD_Zero (FDS);
     fpFD_Set (pipi,FDS);
     fpSelect (pipi+1,@FDS,nil,nil,nil);
+    {$ENDIF}
+    {$IFDEF WINDOWS}
+    FD_Zero (FDS);
+    FD_Set (pipi,FDS);
+    Select (pipi+1,@FDS,nil,nil,nil);
+    {$ENDIF}
+
     if InterruptInStream.NumBytesAvailable > 0 then begin
       while (InterruptInStream.NumBytesAvailable > 0) do
         InterruptInStream.ReadAnsiString;
     end;
+
     // Write data to serial
     wakeSerial(FSerial);
     FSerial.writeData('s' + FLEDSettings.ls_h + FLEDSettings.ls_l);

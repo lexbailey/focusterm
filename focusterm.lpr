@@ -8,7 +8,13 @@ uses
   {$ENDIF}
   Classes,
   { you can add units after this }
-  XFocusListenerThread, xlib, sysutils, dateutils,
+  {$IFDEF UNIX}
+  XFocusListenerThread, xlib,
+  {$ENDIF}
+  {$IFDEF WINDOWS}
+  WindowsFocusListenerThread,
+  {$ENDIF}
+  sysutils, dateutils,
   sdposerial, math, IniFiles, SerialSenderThread;
 
 type
@@ -18,9 +24,14 @@ type
   end;
 
 var
+  {$IFDEF UNIX}
   FocusThread: TXFocusListenerThread;
-  SerialThread: TSerialSenderThread;
   XDisplay: PDisplay;
+  {$ENDIF}
+  {$IFDEF WINDOWS}
+  FocusThread: TWindowsFocusListenerThread;
+  {$ENDIF}
+  SerialThread: TSerialSenderThread;
   serial: TSdpoSerial;
   serialHandler: TserialHandler;
   conf: TINIFile;
@@ -35,14 +46,12 @@ var
 
   attempts: integer;
 
+  iniFileName : string;
+
+  isValid : boolean;
 
 const
-  {$IFDEF UNIX}
-  iniFileName = '/etc/focusbar.conf';
-  {$ENDIF}
-  {$IFDEF WINDOWS}
-  iniFileName = './focusbar.conf';
-  {$ENDIF}
+
   attemptLimit = 10;
 
 
@@ -106,9 +115,22 @@ end;
 
 begin
 
+  {$IFDEF UNIX}
+  iniFileName = '/etc/focusbar.conf';
+  {$ENDIF}
+  {$IFDEF WINDOWS}
+  iniFileName := GetEnvironmentVariable('appdata') + '/focusbar/focusbar.conf';
+  {$ENDIF}
+
   conf := TIniFile.Create(iniFileName);
 
+  {$IFDEF UNIX}
   portName := conf.ReadString ('connection', 'port', '/dev/ttyUSB0');
+  {$ENDIF}
+  {$IFDEF WINDOWS}
+  portName := conf.ReadString ('connection', 'port', 'COM1');
+  {$ENDIF}
+
 
   MyLEDSettings.l_skip   := conf.ReadInteger('leds', 'skip', 0);
   MyLEDSettings.l_light  := conf.ReadInteger('leds', 'use', 30);
@@ -175,18 +197,38 @@ begin
   end;
 
 
+  {$IFDEF UNIX}
   XDisplay := XOpenDisplay(nil);
-  if not (XDisplay = nil) then begin
+  isValid := not (XDisplay = nil);
+  {$ENDIF}
+
+  {$IFDEF WINDOWS}
+  isValid := true;
+  {$ENDIF}
+
+  if isValid then begin
+    {$IFDEF UNIX}
     FocusThread := TXFocusListenerThread.Create(XDisplay, @FocusChanged);
+    {$ENDIF}
+    {$IFDEF WINDOWS}
+    FocusThread := TWindowsFocusListenerThread.Create(@FocusChanged);
+    {$ENDIF}
     SerialThread := TSerialSenderThread.create(serial, FocusThread);
     SerialThread.LEDSettings := MyLEDSettings;
     while (true) do begin
       readln();
+      {$IFDEF UNIX}
       FocusThread.interrupt;
+      {$ENDIF}
     end;
   end else
   begin
+    {$IFDEF UNIX}
     writeln('Unable to open X display');
+    {$ENDIF}
+    {$IFDEF WINDOWS}
+    writeln('Huh, this shouldn''t happen!')
+    {$ENDIF}
   end;
 
 end.
