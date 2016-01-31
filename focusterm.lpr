@@ -118,7 +118,7 @@ end;
 begin
 
   {$IFDEF UNIX}
-  iniFileName = '/etc/focusbar.conf';
+  iniFileName := GetUserDir + '/.focusbar.conf';
   {$ENDIF}
   {$IFDEF WINDOWS}
   iniFileName := GetEnvironmentVariable('appdata') + '/focusbar/focusbar.conf';
