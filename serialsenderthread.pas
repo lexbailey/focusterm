@@ -74,7 +74,7 @@ implementation
 procedure TSerialSenderThread.interrupt;
 begin
   // Interrupt the thread to trigger another update
-  InterruptOutStream.WriteAnsiString('#');
+  InterruptOutStream.WriteByte(0);
 end;
 
 {$IFDEF UNIX}
@@ -145,17 +145,18 @@ begin
     fpFD_Zero (FDS);
     fpFD_Set (pipi,FDS);
     fpSelect (pipi+1,@FDS,nil,nil,nil);
-    {$ENDIF}
-    {$IFDEF WINDOWS}
-    FD_Zero (FDS);
-    FD_Set (pipi,FDS);
-    Select (pipi+1,@FDS,nil,nil,nil);
-    {$ENDIF}
-
     if InterruptInStream.NumBytesAvailable > 0 then begin
       while (InterruptInStream.NumBytesAvailable > 0) do
-        InterruptInStream.ReadAnsiString;
+        InterruptInStream.ReadByte;
     end;
+    {$ENDIF}
+    {$IFDEF WINDOWS}
+    // Read as many bytes as possible in one go, for performance.
+    while (InterruptInStream.NumBytesAvailable > 0) do
+        InterruptInStream.ReadByte;
+    // Then read one more (to wait for an event)
+    InterruptInStream.ReadByte;
+    {$ENDIF}
 
     // Write data to serial
     wakeSerial(FSerial);

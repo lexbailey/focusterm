@@ -11,7 +11,7 @@ interface
 uses
   Classes,
   pipes,
-  windows, winsock, JwaWinAble;
+  windows, winsock, JwaWinAble, Messages;
 
 type
   TFocusNotifyEvent = procedure;
@@ -24,7 +24,6 @@ type
       InterruptInStream: TInputPipeStream;
       InterruptOutStream: TOutputPipeStream;
       procedure WaitForWindowEvent;
-      procedure interrupt;
     public
       procedure updateFocusedWindowData;
       // Note that these rects are used to store width and height in the right
@@ -33,6 +32,7 @@ type
       property RootRect: TRect read rootgeom;
       property OnFocusNotify: TFocusNotifyEvent write FOnFocusNotify;
       procedure Execute; override;
+      procedure interrupt;
       constructor Create(_OnFocusNotify: TFocusNotifyEvent);
   end;
 
@@ -44,7 +44,7 @@ implementation
 procedure TWindowsFocusListenerThread.interrupt;
 begin
   // Interrupt the thread to trigger another update
-  InterruptOutStream.WriteAnsiString('#');
+  InterruptOutStream.WriteByte(0);
 end;
 
 procedure FocusChangeCallback(hWinEventHook: HWINEVENTHOOK; dwEvent: DWORD;
@@ -53,6 +53,21 @@ procedure FocusChangeCallback(hWinEventHook: HWINEVENTHOOK; dwEvent: DWORD;
 begin
   if focusThreadInstance <> nil then
      focusThreadInstance.interrupt;
+end;
+
+procedure hookInto(eventID: cardinal);
+var
+  hook  : HWINEVENTHOOK ;
+  hookCallBack : WINEVENTPROC;
+begin
+  hookCallBack := WINEVENTPROC(@FocusChangeCallback);
+  hook := SetWinEventHook(eventID, eventID, 0, hookCallBack, 0, 0,
+  WINEVENT_OUTOFCONTEXT or WINEVENT_SKIPOWNPROCESS
+  );
+  if (hook = 0) then begin
+     writeln('Fatal error: Couldn''t get windows event hook');
+     exit;
+  end;
 end;
 
 // Constructor that sets some fields and starts the thread
@@ -75,12 +90,8 @@ begin
   // Parent init
   inherited create(False);
   // Event hook for focus change
-  SetWinEventHook(EVENT_SYSTEM_FOREGROUND,
-  EVENT_SYSTEM_FOREGROUND, 0,
-  @FocusChangeCallback, 0, 0,
-  //WINEVENT_OUTOFCONTEXT or WINEVENT_SKIPOWNPROCESS
-  WINEVENT_SKIPOWNPROCESS or WINEVENT_SKIPOWNTHREAD
-  );
+  hookInto(EVENT_SYSTEM_FOREGROUND);
+  hookInto(EVENT_OBJECT_LOCATIONCHANGE);
   // All done, keep a reference to ourself handy in this unit.
   focusThreadInstance := self;
 end;
@@ -109,16 +120,8 @@ begin
 end;
 
 procedure TWindowsFocusListenerThread.WaitForWindowEvent();
-var
-  FDS : Tfdset;
 begin
-  FD_Zero (FDS);
-  FD_Set (pipi,FDS);
-  Select (pipi+1,@FDS,nil,nil,nil);
-  if InterruptInStream.NumBytesAvailable > 0 then begin
-    while (InterruptInStream.NumBytesAvailable > 0) do
-      InterruptInStream.ReadAnsiString;
-  end;
+  InterruptInStream.ReadByte;
 end;
 
 procedure TWindowsFocusListenerThread.Execute();

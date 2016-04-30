@@ -13,7 +13,7 @@ uses
   {$ENDIF}
   {$IFDEF WINDOWS}
   WindowsFocusListenerThread,
-  windows,
+  windows, messages,
   JwaWinAble,
   {$ENDIF}
   sysutils, dateutils,
@@ -51,6 +51,10 @@ var
   iniFileName : string;
 
   isValid : boolean;
+
+  {$IFDEF WINDOWS}
+  message : MSG;
+  {$ENDIF}
 
 const
 
@@ -218,9 +222,19 @@ begin
     SerialThread := TSerialSenderThread.create(serial, FocusThread);
     SerialThread.LEDSettings := MyLEDSettings;
     while (true) do begin
-      readln();
       {$IFDEF UNIX}
+      // For unix systems, this thread can now sleep forever.
+      // However, the focus thread is interrupted whenever a line can
+      // be read from stdin. This is handy for debugging.
+      readln();
       FocusThread.interrupt;
+      {$ENDIF}
+      {$IFDEF WINDOWS}
+      // In windows, we need to use this loop to process application messages
+      if GetMessage(@message, QWord(nil), 0, 0) then begin
+         TranslateMessage(@message);
+         DispatchMessage(@message);
+      end;
       {$ENDIF}
     end;
   end else
