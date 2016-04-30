@@ -148,6 +148,7 @@ begin
   MyLEDSettings.l_light  := conf.ReadInteger('leds', 'use', 30);
   MyLEDSettings.l_tot    := conf.ReadInteger('leds', 'total', 30);
   MyLEDSettings.rev      := conf.ReadBool('leds', 'reverse', false);
+  MyLEDSettings.mouse    := conf.ReadBool('leds', 'showmouse', true);
 
   focusColour := conf.ReadString ('colours', 'focus', '00ff00');
   otherColour := conf.ReadString ('colours', 'other', '000000');

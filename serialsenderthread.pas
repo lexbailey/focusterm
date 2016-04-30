@@ -36,6 +36,7 @@ type
     l_skip, l_light, l_tot: integer;
     ls_l, ls_h, ll_l, ll_h, lt_l, lt_h : char;
     rev: boolean;
+    mouse: boolean;
   end;
 
   // Thread that sends serial stuff to the LED strip
@@ -122,6 +123,10 @@ end;
 function TSerialSenderThread.isMouse(i, numLEDs: integer):boolean;
 var relCursor: extended;
 begin
+  if not FLEDSettings.mouse then begin
+     result := false;
+     exit;
+  end;
   // Determine if LED i should be lit to indicate mouse cursor
   if FLEDSettings.rev then begin
     i := (numLEDs - i) -1;
