@@ -32,6 +32,7 @@ type
   TLEDSettings = record
     fo_r_h, fo_g_h, fo_b_h, fo_r_l, fo_g_l, fo_b_l: char;
     ot_r_h, ot_g_h, ot_b_h, ot_r_l, ot_g_l, ot_b_l: char;
+    cc_r_h, cc_g_h, cc_b_h, cc_r_l, cc_g_l, cc_b_l: char;
     l_skip, l_light, l_tot: integer;
     ls_l, ls_h, ll_l, ll_h, lt_l, lt_h : char;
     rev: boolean;
@@ -59,6 +60,7 @@ type
       procedure interrupt;
       property LEDSettings : TLEDSettings read FLEDSettings write FLEDSettings;
       function islit(i, numLEDs: integer):boolean;
+      function isMouse(i, numLEDs: integer):boolean;
       {$IFDEF UNIX}
       constructor Create(_serial: TSdpoSerial; _focus: TXFocusListenerThread);
       {$ENDIF}
@@ -104,7 +106,7 @@ end;
 function TSerialSenderThread.isLit(i, numLEDs: integer):boolean;
 var relPos, relStart, relEnd: extended;
 begin
-  // Determine if LED i should be lit
+  // Determine if LED i should be lit to indicate focus
   // Remember that the rects are used to store width and height in the right
   // and bottom fields
   if FLEDSettings.rev then begin
@@ -115,6 +117,17 @@ begin
   relEnd :=
   (FFocus.CurrentRect.Left+FFocus.CurrentRect.Right) / FFocus.RootRect.Right;
   result := (relStart<=relPos) and (relPos <= relEnd);
+end;
+
+function TSerialSenderThread.isMouse(i, numLEDs: integer):boolean;
+var relCursor: extended;
+begin
+  // Determine if LED i should be lit to indicate mouse cursor
+  if FLEDSettings.rev then begin
+    i := (numLEDs - i) -1;
+  end;
+  relCursor := FFocus.CursorPos.x / FFocus.RootRect.Right;
+  result := i = floor(relCursor * numLEDs);
 end;
 
 procedure waitForReply(serial: TSdpoSerial);
@@ -172,21 +185,31 @@ begin
     for i := 0 to FLEDSettings.l_light-1 do begin
       buf[0] := 'd';
 
-      if (isLit(i, FLEDSettings.l_light)) then begin
-        buf[1] := char(FLEDSettings.fo_r_h);
-        buf[2] := char(FLEDSettings.fo_g_h);
-        buf[3] := char(FLEDSettings.fo_b_h);
-        buf[4] := char(FLEDSettings.fo_r_l);
-        buf[5] := char(FLEDSettings.fo_g_l);
-        buf[6] := char(FLEDSettings.fo_b_l);
+      if (isMouse(i, FLEDSettings.l_light)) then begin
+        buf[1] := char(FLEDSettings.cc_r_h);
+        buf[2] := char(FLEDSettings.cc_g_h);
+        buf[3] := char(FLEDSettings.cc_b_h);
+        buf[4] := char(FLEDSettings.cc_r_l);
+        buf[5] := char(FLEDSettings.cc_g_l);
+        buf[6] := char(FLEDSettings.cc_b_l);
       end else
       begin
-        buf[1] := char(FLEDSettings.ot_r_h);
-        buf[2] := char(FLEDSettings.ot_g_h);
-        buf[3] := char(FLEDSettings.ot_b_h);
-        buf[4] := char(FLEDSettings.ot_r_l);
-        buf[5] := char(FLEDSettings.ot_g_l);
-        buf[6] := char(FLEDSettings.ot_b_l);
+        if (isLit(i, FLEDSettings.l_light)) then begin
+          buf[1] := char(FLEDSettings.fo_r_h);
+          buf[2] := char(FLEDSettings.fo_g_h);
+          buf[3] := char(FLEDSettings.fo_b_h);
+          buf[4] := char(FLEDSettings.fo_r_l);
+          buf[5] := char(FLEDSettings.fo_g_l);
+          buf[6] := char(FLEDSettings.fo_b_l);
+        end else
+        begin
+          buf[1] := char(FLEDSettings.ot_r_h);
+          buf[2] := char(FLEDSettings.ot_g_h);
+          buf[3] := char(FLEDSettings.ot_b_h);
+          buf[4] := char(FLEDSettings.ot_r_l);
+          buf[5] := char(FLEDSettings.ot_g_l);
+          buf[6] := char(FLEDSettings.ot_b_l);
+        end;
       end;
 
 

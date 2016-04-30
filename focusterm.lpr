@@ -41,10 +41,13 @@ var
   portName: string;
   focusColour: string;
   otherColour: string;
+  cursorColour: string;
   MyLEDSettings: TLEDSettings;
   gi: integer;
 
   lastStart, lastStop: integer;
+
+  lastCurx : integer;
 
   attempts: integer;
 
@@ -65,12 +68,15 @@ procedure FocusChanged();
 var
   hasChanged: boolean;
   thisStart, thisStop: integer;
+  thisCurx: integer;
 const sleepDelay: integer = 1;
 begin
   thisStart := max(0,FocusThread.CurrentRect.Left);
   thisStop := FocusThread.CurrentRect.Left+FocusThread.CurrentRect.Right;
+  thisCurx := FocusThread.CursorPos.x;
 
-  hasChanged := (thisStart <> lastStart) or (thisStop <> lastStop);
+  hasChanged := (thisStart <> lastStart) or (thisStop <> lastStop)
+             or (thisCurx <> lastCurx);
 
   if hasChanged then begin
     lastStart := thisStart;
@@ -145,6 +151,7 @@ begin
 
   focusColour := conf.ReadString ('colours', 'focus', '00ff00');
   otherColour := conf.ReadString ('colours', 'other', '000000');
+  cursorColour := conf.ReadString ('colours', 'cursor', '7f2222');
 
   if MyLEDSettings.l_skip > 255 then fatalError('Cannot skip this many LEDs, max is 255');
   if MyLEDSettings.l_light > 255 then fatalError('Cannot use this many LEDs, max is 255');
@@ -177,6 +184,13 @@ begin
   MyLEDSettings.ot_g_l := hexCharToEncInt(otherColour[4]);
   MyLEDSettings.ot_b_h := hexCharToEncInt(otherColour[5]);
   MyLEDSettings.ot_b_l := hexCharToEncInt(otherColour[6]);
+
+  MyLEDSettings.cc_r_h := hexCharToEncInt(cursorColour[1]);
+  MyLEDSettings.cc_r_l := hexCharToEncInt(cursorColour[2]);
+  MyLEDSettings.cc_g_h := hexCharToEncInt(cursorColour[3]);
+  MyLEDSettings.cc_g_l := hexCharToEncInt(cursorColour[4]);
+  MyLEDSettings.cc_b_h := hexCharToEncInt(cursorColour[5]);
+  MyLEDSettings.cc_b_l := hexCharToEncInt(cursorColour[6]);
 
   serial := TSdpoSerial.Create(nil);
   serial.BaudRate:=br115200;

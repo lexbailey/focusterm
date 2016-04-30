@@ -19,6 +19,7 @@ type
     private
       geom: TRect;
       rootgeom: TRect;
+      fcursorPos: TPoint;
       FOnFocusNotify: TFocusNotifyEvent;
       pipi, pipo: THandle;
       InterruptInStream: TInputPipeStream;
@@ -30,6 +31,7 @@ type
       // and bottom fields
       property CurrentRect: TRect read geom;
       property RootRect: TRect read rootgeom;
+      property CursorPos: TPoint read fcursorpos;
       property OnFocusNotify: TFocusNotifyEvent write FOnFocusNotify;
       procedure Execute; override;
       procedure interrupt;
@@ -115,6 +117,7 @@ begin
     rootgeom.Left:=0;
     rootgeom.Right:=GetSystemMetrics(SM_CXVIRTUALSCREEN);
     rootgeom.Bottom:=GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    windows.GetCursorPos(fcursorPos);
     if (not (FOnFocusNotify = nil)) then FOnFocusNotify();
   end;
 end;
