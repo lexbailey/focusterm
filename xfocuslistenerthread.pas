@@ -40,6 +40,7 @@ type
       InterruptInStream: TInputPipeStream;
       InterruptOutStream: TOutputPipeStream;
       FGotEvent: boolean;
+      FCursorPos: TPoint;
       procedure WaitForXEvent;
     public
       procedure updateFocusedWindowData;
@@ -49,6 +50,7 @@ type
       // and bottom fields
       property CurrentRect: TRect read geom;
       property RootRect: TRect read rootgeom;
+      property CursorPos: TPoint read fcursorpos;
       property OnFocusNotify: TFocusNotifyEvent write FOnFocusNotify;
       procedure Execute; override;
       constructor Create(_XDisplay: PDisplay;
