@@ -156,8 +156,10 @@ var
   FDS : Tfdset;
   buf : array[0..6] of char;
   i: integer;
+  skipped: boolean;
 begin
   while (not terminated) do begin
+    skipped := false;
     // Wait to be interrupted by 'selecting' the interrupt pipe
     {$IFDEF UNIX}
     fpFD_Zero (FDS);
@@ -169,11 +171,15 @@ begin
     end;
     {$ENDIF}
     {$IFDEF WINDOWS}
-    // Read as many bytes as possible in one go, for performance.
-    while (InterruptInStream.NumBytesAvailable > 0) do
+    // Read as many bytes as possible in one go, to allow us to drop frames.
+    while (InterruptInStream.NumBytesAvailable > 0) do begin
+        skipped := true;
         InterruptInStream.ReadByte;
-    // Then read one more (to wait for an event)
-    InterruptInStream.ReadByte;
+    end;
+    // Then read one more to wait for an event (unless we dropped some frames
+    // In that case we need to do another update first)
+    if not skipped then
+        InterruptInStream.ReadByte;
     {$ENDIF}
 
     // Write data to serial
