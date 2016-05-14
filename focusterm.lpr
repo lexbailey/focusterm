@@ -17,8 +17,9 @@ uses
   JwaWinAble,
   {$ENDIF}
   sysutils, dateutils,
-  sdposerial, math, IniFiles, SerialSenderThread;
-
+  sdposerial, math, IniFiles, SerialSenderThread,
+  LResources,
+  ExtCtrls, Interfaces;
 type
   TserialHandler = class(TObject)
     public
@@ -59,10 +60,29 @@ var
   message : MSG;
   {$ENDIF}
 
+  TrayIcon: TTrayIcon;
+
 const
 
   attemptLimit = 10;
 
+
+{$IFDEF UNIX}
+{$ASMMODE intel}
+procedure pause();
+begin
+  // Maybe i'm not looking hard enough,
+  // but I can't find an implementation
+  // of sys_pause that I can use here.
+  // Not a big deal, it's four lines of asm.
+  asm
+     push rax
+     mov rax, 34
+     syscall
+     pop rax
+  end;
+end;
+{$ENDIF}
 
 procedure FocusChanged();
 var
@@ -125,7 +145,13 @@ begin
 
 end;
 
+{$R *.res}
+
+
+
 begin
+
+  {$I icon.lrs}
 
   {$IFDEF UNIX}
   iniFileName := GetUserDir + '/.focusbar.conf';
@@ -193,6 +219,10 @@ begin
   MyLEDSettings.cc_b_h := hexCharToEncInt(cursorColour[5]);
   MyLEDSettings.cc_b_l := hexCharToEncInt(cursorColour[6]);
 
+  TrayIcon := TTrayIcon.create(nil);
+  TrayIcon.show();
+  Trayicon.Icon.LoadFromLazarusResource('icon');
+
   serial := TSdpoSerial.Create(nil);
   serial.BaudRate:=br115200;
   serial.StopBits:=sbOne;
@@ -239,10 +269,7 @@ begin
     while (true) do begin
       {$IFDEF UNIX}
       // For unix systems, this thread can now sleep forever.
-      // However, the focus thread is interrupted whenever a line can
-      // be read from stdin. This is handy for debugging.
-      readln();
-      FocusThread.interrupt;
+      pause();
       {$ENDIF}
       {$IFDEF WINDOWS}
       // In windows, we need to use this loop to process application messages
@@ -261,6 +288,5 @@ begin
     writeln('Huh, this shouldn''t happen!')
     {$ENDIF}
   end;
-
 end.
 
